@@ -1,0 +1,259 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// ENUMS (Types stricts pour la cohérence)
+// ==========================================
+
+enum Role {
+  SUPER_ADMIN
+  BAILLEUR
+  GERANT
+  LOCATAIRE
+  PRESTATAIRE
+}
+enum TicketStatus {
+  OUVERT
+  ASSIGNE
+  EN_COURS
+  RESOLU
+  CLOTURE
+}
+
+enum UrgencyLevel {
+  FAIBLE
+  MOYEN
+  CRITIQUE
+}
+
+enum PaymentStatus {
+  EN_ATTENTE
+  PAYE
+  ECHOUE
+  REJETE
+}
+
+enum ExpenseCategory {
+  PRESTATAIRE      // Paiement d'un prestataire (réparation, dépannage)
+  PERSONNEL        // Salaire gardien, concierge, agent d'entretien
+  FOURNITURES      // Matériaux, équipements, consommables
+  CHARGES_COMMUNES // Eau, électricité, ascenseur parties communes
+  ASSURANCE        // Assurance du bien
+  TAXE_IMPOT       // Taxe foncière, impôts locaux
+  AUTRE
+}
+
+enum ExpenseStatus {
+  EN_ATTENTE // Dépense créée, paiement pas encore effectué
+  PAYEE      // Paiement confirmé
+  ANNULEE    // Annulée avant paiement
+}
+
+enum PropertyType {
+  APPARTEMENT
+  STUDIO
+  VILLA
+  MAGASIN
+  AUTRE
+}
+
+// ==========================================
+// MODÈLES (Tables)
+// ==========================================
+
+model User {
+  id                   String    @id @default(uuid())
+  email                String    @unique
+  nom                  String
+  prenom               String
+  telephone            String?
+  role                 Role      @default(LOCATAIRE)
+  password             String
+  refreshToken         String?
+  passwordResetToken   String?
+  passwordResetExpiry  DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  // Relations
+  notifications Notification[]
+  ownedProperties Property[]   @relation("BailleurProperties") // Les biens qu'il possède (si Bailleur)
+  managedProperties Property[] @relation("GerantProperties")   // Les biens qu'il gère (si Gérant)
+  contracts       Contract[]   // Les contrats signés (si Locataire)
+  reportedTickets Ticket[]     @relation("LocataireTickets")   // Pannes signalées
+  assignedTickets Ticket[]     @relation("PrestataireTickets") // Pannes à réparer (si Prestataire)
+  payments        Payment[]    // Paiements de loyer effectués
+  depensesPayees  Expense[]    @relation("DepensesPayees")     // Dépenses initiées (si Gérant/Bailleur)
+  depensesRecues  Expense[]    @relation("DepensesRecues")     // Dépenses reçues (si Prestataire/Personnel)
+  auditLogs       AuditLog[]   // Actions tracées
+
+  @@map("users")
+}
+
+model Property {
+  id          String       @id @default(uuid())
+  titre       String       // ex: "Villa Duplex Chic"
+  description String?
+  adresse     String
+  ville       String
+  type        PropertyType @default(APPARTEMENT)
+  loyerDeBase Float        // Montant hors charges
+  charges     Float        @default(0)
+  estOccupe   Boolean      @default(false)
+  
+  // Relations
+  bailleurId  String
+  bailleur    User         @relation("BailleurProperties", fields: [bailleurId], references: [id])
+  gerantId    String?
+  gerant      User?        @relation("GerantProperties", fields: [gerantId], references: [id])
+  
+  contracts   Contract[]
+  tickets     Ticket[]
+  expenses    Expense[]
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("properties")
+}
+
+model Contract {
+  id          String    @id @default(uuid())
+  dateDebut   DateTime
+  dateFin     DateTime?
+  loyerTotal  Float     // Loyer de base + charges au moment de la signature
+  estActif    Boolean   @default(true)
+
+  // Relations
+  propertyId  String
+  property    Property  @relation(fields: [propertyId], references: [id])
+  locataireId String
+  locataire   User      @relation(fields: [locataireId], references: [id])
+  
+  payments    Payment[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("contracts")
+}
+
+model Ticket {
+  id           String       @id @default(uuid())
+  titre        String
+  description  String
+  photos       String[]     // Stockage des URLs des images
+  urgence      UrgencyLevel @default(MOYEN)
+  statut       TicketStatus @default(OUVERT)
+
+  // Relations
+  propertyId   String
+  property     Property     @relation(fields: [propertyId], references: [id])
+  locataireId  String
+  locataire    User         @relation("LocataireTickets", fields: [locataireId], references: [id])
+  prestataireId String?
+  prestataire  User?        @relation("PrestataireTickets", fields: [prestataireId], references: [id])
+
+  expense      Expense?     // Dépense liée à ce ticket (intervention d'un prestataire)
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@map("tickets")
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  montant       Float
+  datePaiement  DateTime?
+  periode       String        // ex: "06-2026" pour Juin 2026
+  statut        PaymentStatus @default(EN_ATTENTE)
+  referenceId   String?       @unique // Référence de la passerelle (Stripe, Wave, Orange Money)
+  recuUrl       String?       // Lien vers la quittance PDF
+
+  // Relations
+  contractId    String
+  contract      Contract      @relation(fields: [contractId], references: [id])
+  locataireId   String
+  locataire     User          @relation(fields: [locataireId], references: [id])
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+model Expense {
+  id               String          @id @default(uuid())
+  titre            String          // ex: "Réparation plomberie Juin", "Salaire gardien"
+  description      String?
+  montant          Float
+  date             DateTime        @default(now()) // Date effective de la dépense
+  categorie        ExpenseCategory
+  statut           ExpenseStatus   @default(EN_ATTENTE)
+  beneficiaireNom  String          // Nom du bénéficiaire (toujours renseigné)
+  referenceId      String?         // Référence du virement / chèque / mobile money
+  justificatifUrl  String?         // URL facture ou reçu (Cloudinary)
+
+  // Relations
+  payeurId         String
+  payeur           User            @relation("DepensesPayees", fields: [payeurId], references: [id])
+  beneficiaireId   String?         // Si le bénéficiaire est un utilisateur du système
+  beneficiaire     User?           @relation("DepensesRecues", fields: [beneficiaireId], references: [id])
+  propertyId       String?         // Bien concerné (optionnel pour dépenses globales)
+  property         Property?       @relation(fields: [propertyId], references: [id])
+  ticketId         String?         @unique // Dépense liée à une intervention (optionnel)
+  ticket           Ticket?         @relation(fields: [ticketId], references: [id])
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@map("expenses")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  action    String   // ex: "TICKET_STATUS_UPDATE", "PAYMENT_RECEIVED"
+  table     String   // ex: "Ticket", "Payment"
+  enregistrementId String // L'ID de la ligne modifiée
+  details   Json     // Stocke l'état avant/après ou des métadonnées
+  ipAdresse String?
+  userAgent String?
+
+  // Relations
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+enum NotificationType {
+  TICKET_STATUT_CHANGE    // Ex: "Votre panne est en cours de réparation"
+  NOUVEAU_TICKET_ASSIGNE  // Ex: "Un nouveau dépannage vous a été attribué"
+  LOYER_DISPONIBLE        // Ex: "Votre avis d'échéance de Juin 2026 est disponible"
+  PAIEMENT_VALIDE         // Ex: "Merci, votre paiement a été reçu"
+  RAPPEL_IMPAYE           // Ex: "Rappel : Votre loyer est en attente"
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  titre       String           // Ex: "Panne assignée"
+  message     String           // Ex: "Le plombier Diallo a été assigné à votre demande."
+  type        NotificationType
+  estLu       Boolean          @default(false)
+  
+  // Relation avec l'utilisateur qui reçoit la notification
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime         @default(now())
+
+  @@map("notifications")
+}
