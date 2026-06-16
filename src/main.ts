@@ -17,6 +17,24 @@ async function bootstrap() {
   );
 
   app.enableCors();
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:3000',
+    'https://immob-six.vercel.app',
+    'https://immob-api-charist-production.up.railway.app',
+    'https://localhost',
+    'app://',
+  ];
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      }
+      else {        callback(new Error('Not allowed by CORS'));
+      }
+    },
+  });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Immob API')
