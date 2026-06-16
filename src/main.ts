@@ -16,24 +16,28 @@ async function bootstrap() {
     }),
   );
 
-  app.enableCors();
   const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:5173',
     'http://127.0.0.1:3000',
+    "https://immob-api-charist-production.up.railway.app",
     'https://immob-six.vercel.app',
-    'https://immob-api-charist-production.up.railway.app',
     'https://localhost',
     'app://',
   ];
+
   app.enableCors({
     origin: (origin, callback) => {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
-      }
-      else {        callback(new Error('Not allowed by CORS'));
+      } else {
+        console.warn('Origin bloquée par CORS :', origin); // pour debug dans les logs Railway
+        callback(null, false); // refus propre, pas d'exception -> pas de 500
       }
     },
+    credentials: true, // nécessaire si vous envoyez cookies ou Authorization avec credentials
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   const swaggerConfig = new DocumentBuilder()
@@ -75,8 +79,12 @@ async function bootstrap() {
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
 
-  console.log(`\n🚀  Application démarrée sur : http://localhost:${port}/api/v1`);
-  console.log(`📚  Documentation Swagger  : http://localhost:${port}/api/docs\n`);
+  console.log(
+    `\n🚀  Application démarrée sur : http://localhost:${port}/api/v1`,
+  );
+  console.log(
+    `📚  Documentation Swagger  : http://localhost:${port}/api/docs\n`,
+  );
 }
 
 bootstrap();
