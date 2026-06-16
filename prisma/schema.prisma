@@ -38,6 +38,14 @@ enum PaymentStatus {
   REJETE
 }
 
+enum MethodePaiement {
+  WAVE
+  ORANGE_MONEY
+  MTN
+  VIREMENT
+  ESPECES
+}
+
 enum ExpenseCategory {
   PRESTATAIRE      // Paiement d'un prestataire (réparation, dépannage)
   PERSONNEL        // Salaire gardien, concierge, agent d'entretien
@@ -81,7 +89,8 @@ model User {
   updatedAt            DateTime  @updatedAt
 
   // Relations
-  notifications Notification[]
+  notifications         Notification[] @relation("NotificationsRecues")
+  notificationsEnvoyees Notification[] @relation("NotificationsEnvoyees")
   ownedProperties Property[]   @relation("BailleurProperties") // Les biens qu'il possède (si Bailleur)
   managedProperties Property[] @relation("GerantProperties")   // Les biens qu'il gère (si Gérant)
   contracts       Contract[]   // Les contrats signés (si Locataire)
@@ -172,8 +181,9 @@ model Payment {
   montant       Float
   datePaiement  DateTime?
   periode       String        // ex: "06-2026" pour Juin 2026
-  statut        PaymentStatus @default(EN_ATTENTE)
-  referenceId   String?       @unique // Référence de la passerelle (Stripe, Wave, Orange Money)
+  statut          PaymentStatus    @default(EN_ATTENTE)
+  methodePaiement MethodePaiement?
+  referenceId     String?          @unique // Référence de la passerelle (Wave, Orange Money…)
   recuUrl       String?       // Lien vers la quittance PDF
 
   // Relations
@@ -235,23 +245,42 @@ model AuditLog {
 }
 
 enum NotificationType {
-  TICKET_STATUT_CHANGE    // Ex: "Votre panne est en cours de réparation"
-  NOUVEAU_TICKET_ASSIGNE  // Ex: "Un nouveau dépannage vous a été attribué"
-  LOYER_DISPONIBLE        // Ex: "Votre avis d'échéance de Juin 2026 est disponible"
-  PAIEMENT_VALIDE         // Ex: "Merci, votre paiement a été reçu"
-  RAPPEL_IMPAYE           // Ex: "Rappel : Votre loyer est en attente"
+  // Tickets
+  TICKET_OUVERT           // Nouveau ticket signalé
+  TICKET_STATUT_CHANGE    // Statut d'un ticket mis à jour
+  NOUVEAU_TICKET_ASSIGNE  // Un ticket vous a été assigné (prestataire)
+  TICKET_RESOLU           // Ticket marqué comme résolu
+  // Paiements
+  LOYER_DISPONIBLE        // Avis d'échéance disponible
+  PAIEMENT_VALIDE         // Paiement confirmé
+  PAIEMENT_REJETE         // Paiement rejeté
+  PAIEMENT_ECHOUE         // Paiement échoué
+  RAPPEL_IMPAYE           // Rappel loyer en attente
+  // Contrats
+  CONTRAT_CREE            // Nouveau contrat signé
+  CONTRAT_RESILIE         // Contrat résilié
+  // Dépenses
+  DEPENSE_CREEE           // Nouvelle dépense enregistrée
+  DEPENSE_PAYEE           // Dépense confirmée payée
+  // Général
+  MESSAGE_DIRECT          // Message direct entre acteurs
+  SYSTEME                 // Notification système générale
 }
 
 model Notification {
   id          String           @id @default(uuid())
-  titre       String           // Ex: "Panne assignée"
-  message     String           // Ex: "Le plombier Diallo a été assigné à votre demande."
+  titre       String
+  message     String
   type        NotificationType
   estLu       Boolean          @default(false)
-  
-  // Relation avec l'utilisateur qui reçoit la notification
+
+  // Destinataire (obligatoire)
   userId      String
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User             @relation("NotificationsRecues", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Expéditeur (null = notification système)
+  expediteurId String?
+  expediteur   User?           @relation("NotificationsEnvoyees", fields: [expediteurId], references: [id], onDelete: SetNull)
 
   createdAt   DateTime         @default(now())
 

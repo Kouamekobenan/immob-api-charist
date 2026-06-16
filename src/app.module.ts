@@ -12,6 +12,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ExpensesModule } from './modules/expenses/expenses.module';
     AuditLogsModule,
     CloudinaryModule,
     ExpensesModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

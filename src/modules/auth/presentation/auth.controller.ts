@@ -40,7 +40,6 @@ export class AuthController {
     private readonly resetPasswordUseCase: ResetPasswordUseCase,
     private readonly refreshTokenUseCase: RefreshTokenUseCase,
   ) {}
-
   @Post('register')
   @ApiOperation({ summary: 'Créer un nouveau compte utilisateur' })
   @ApiResponse({ status: 201, type: AuthResponse, description: 'Compte créé avec succès' })
@@ -58,7 +57,6 @@ export class AuthController {
   login(@Body() dto: LoginDto): Promise<AuthResponse> {
     return this.loginUseCase.execute(dto);
   }
-
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
@@ -70,7 +68,6 @@ export class AuthController {
     await this.logoutUseCase.execute(user.id);
     return { message: 'Déconnexion réussie' };
   }
-
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtRefreshGuard)
