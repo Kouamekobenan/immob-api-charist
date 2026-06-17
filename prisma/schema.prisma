@@ -38,14 +38,6 @@ enum PaymentStatus {
   REJETE
 }
 
-enum MethodePaiement {
-  WAVE
-  ORANGE_MONEY
-  MTN
-  VIREMENT
-  ESPECES
-}
-
 enum ExpenseCategory {
   PRESTATAIRE      // Paiement d'un prestataire (réparation, dépannage)
   PERSONNEL        // Salaire gardien, concierge, agent d'entretien
@@ -182,7 +174,6 @@ model Payment {
   datePaiement  DateTime?
   periode       String        // ex: "06-2026" pour Juin 2026
   statut          PaymentStatus    @default(EN_ATTENTE)
-  methodePaiement MethodePaiement?
   referenceId     String?          @unique // Référence de la passerelle (Wave, Orange Money…)
   recuUrl       String?       // Lien vers la quittance PDF
 
