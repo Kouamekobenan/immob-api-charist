@@ -3,6 +3,8 @@ import { CotisationStatut, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
 import {
   AddMembreData,
+  AddTrancheData,
+  AddTrancheResult,
   ConfirmContributionData,
   CreateGroupeData,
   GroupeSummary,
@@ -12,12 +14,13 @@ import {
 import { CotisationGroupeEntity } from '../../domain/entities/cotisation-groupe.entity';
 import { CotisationMembreEntity } from '../../domain/entities/cotisation-membre.entity';
 import { ContributionEntity } from '../../domain/entities/contribution.entity';
+import { TranchePaiementEntity } from '../../domain/entities/tranche-paiement.entity';
 
 @Injectable()
 export class PrismaCotisationRepository implements ICotisationRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────────
 
   private toGroupeEntity(g: {
     id: string; nom: string; description: string | null; montantParMembre: number;
@@ -40,13 +43,26 @@ export class PrismaCotisationRepository implements ICotisationRepository {
   }
 
   private toContributionEntity(c: {
-    id: string; montant: number; periode: string; statut: PaymentStatus;
-    datePaiement: Date | null; referenceId: string | null; recuUrl: string | null;
-    groupeId: string; membreId: string; createdAt: Date; updatedAt: Date;
+    id: string; montant: number; montantPaye: number; periode: string;
+    statut: PaymentStatus; datePaiement: Date | null; referenceId: string | null;
+    recuUrl: string | null; groupeId: string; membreId: string;
+    createdAt: Date; updatedAt: Date;
   }): ContributionEntity {
     return new ContributionEntity(
-      c.id, c.montant, c.periode, c.statut, c.datePaiement,
-      c.referenceId, c.recuUrl, c.groupeId, c.membreId, c.createdAt, c.updatedAt,
+      c.id, c.montant, c.montantPaye, c.periode, c.statut,
+      c.datePaiement, c.referenceId, c.recuUrl,
+      c.groupeId, c.membreId, c.createdAt, c.updatedAt,
+    );
+  }
+
+  private toTrancheEntity(t: {
+    id: string; montant: number; datePaiement: Date;
+    referenceId: string | null; recuUrl: string | null;
+    contributionId: string; createdAt: Date;
+  }): TranchePaiementEntity {
+    return new TranchePaiementEntity(
+      t.id, t.montant, t.datePaiement, t.referenceId, t.recuUrl,
+      t.contributionId, t.createdAt,
     );
   }
 
@@ -183,18 +199,65 @@ export class PrismaCotisationRepository implements ICotisationRepository {
   async updateContributionStatut(
     id: string, statut: PaymentStatus, data?: ConfirmContributionData,
   ): Promise<ContributionEntity> {
+    const current = await this.prisma.contribution.findUniqueOrThrow({ where: { id } });
     const c = await this.prisma.contribution.update({
       where: { id },
       data: {
         statut,
-        ...(data?.referenceId !== undefined && { referenceId: data.referenceId }),
-        ...(data?.recuUrl !== undefined && { recuUrl: data.recuUrl }),
         ...(statut === PaymentStatus.PAYE && {
+          montantPaye: current.montant,
           datePaiement: data?.datePaiement ?? new Date(),
         }),
+        ...(data?.referenceId !== undefined && { referenceId: data.referenceId }),
+        ...(data?.recuUrl !== undefined && { recuUrl: data.recuUrl }),
       },
     });
     return this.toContributionEntity(c);
+  }
+
+  // ── Tranches ──────────────────────────────────────────────────────────────────
+
+  async addTranche(contributionId: string, data: AddTrancheData): Promise<AddTrancheResult> {
+    const current = await this.prisma.contribution.findUniqueOrThrow({
+      where: { id: contributionId },
+    });
+
+    const newMontantPaye = current.montantPaye + data.montant;
+    const isFullyPaid = newMontantPaye >= current.montant;
+    const newStatut = isFullyPaid ? PaymentStatus.PAYE : PaymentStatus.PARTIEL;
+
+    const [tranche, contribution] = await this.prisma.$transaction([
+      this.prisma.tranchePaiement.create({
+        data: {
+          montant: data.montant,
+          datePaiement: data.datePaiement ?? new Date(),
+          referenceId: data.referenceId,
+          recuUrl: data.recuUrl,
+          contributionId,
+        },
+      }),
+      this.prisma.contribution.update({
+        where: { id: contributionId },
+        data: {
+          montantPaye: newMontantPaye,
+          statut: newStatut,
+          ...(isFullyPaid && { datePaiement: data.datePaiement ?? new Date() }),
+        },
+      }),
+    ]);
+
+    return {
+      tranche: this.toTrancheEntity(tranche),
+      contribution: this.toContributionEntity(contribution),
+    };
+  }
+
+  async findTranchesByContribution(contributionId: string): Promise<TranchePaiementEntity[]> {
+    const tranches = await this.prisma.tranchePaiement.findMany({
+      where: { contributionId },
+      orderBy: { datePaiement: 'asc' },
+    });
+    return tranches.map((t) => this.toTrancheEntity(t));
   }
 
   // ── Résumé ────────────────────────────────────────────────────────────────────
@@ -206,12 +269,15 @@ export class PrismaCotisationRepository implements ICotisationRepository {
 
     const entities = contributions.map((c) => this.toContributionEntity(c));
     const payes = entities.filter((c) => c.statut === PaymentStatus.PAYE);
-    const enAttente = entities.filter((c) => c.statut === PaymentStatus.EN_ATTENTE);
+    const enAttente = entities.filter(
+      (c) => c.statut === PaymentStatus.EN_ATTENTE || c.statut === PaymentStatus.PARTIEL,
+    );
 
     return {
       totalAttendu: entities.reduce((sum, c) => sum + c.montant, 0),
-      totalCollecte: payes.reduce((sum, c) => sum + c.montant, 0),
-      totalEnAttente: enAttente.reduce((sum, c) => sum + c.montant, 0),
+      // Utilise montantPaye pour capturer les paiements partiels aussi
+      totalCollecte: entities.reduce((sum, c) => sum + c.montantPaye, 0),
+      totalEnAttente: enAttente.reduce((sum, c) => sum + c.montantRestant(), 0),
       nombreMembresPayes: payes.length,
       nombreMembresEnAttente: enAttente.length,
       contributions: entities,

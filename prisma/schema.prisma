@@ -33,6 +33,7 @@ enum UrgencyLevel {
 
 enum PaymentStatus {
   EN_ATTENTE
+  PARTIEL    // Paiement partiel en cours (tranches)
   PAYE
   ECHOUE
   REJETE
@@ -348,14 +349,33 @@ model Contribution {
   referenceId  String?       @unique // Référence mobile money
   recuUrl      String?       // Preuve de paiement (Cloudinary)
 
+  montantPaye  Float         @default(0)  // Cumul des tranches versées
+
   groupeId     String
   groupe       CotisationGroupe @relation(fields: [groupeId], references: [id])
   membreId     String
   membre       CotisationMembre @relation(fields: [membreId], references: [id])
 
+  tranches     TranchePaiement[]
+
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  @@unique([groupeId, membreId, periode]) // Un seul paiement par membre par période
+  @@unique([groupeId, membreId, periode])
   @@map("contributions")
+}
+
+model TranchePaiement {
+  id             String       @id @default(uuid())
+  montant        Float
+  datePaiement   DateTime     @default(now())
+  referenceId    String?      @unique // Référence mobile money de cette tranche
+  recuUrl        String?      // Preuve de paiement (Cloudinary)
+
+  contributionId String
+  contribution   Contribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime     @default(now())
+
+  @@map("tranches_paiement")
 }

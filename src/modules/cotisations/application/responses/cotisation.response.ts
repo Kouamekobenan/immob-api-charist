@@ -3,6 +3,7 @@ import { CotisationStatut, PaymentStatus } from '@prisma/client';
 import { CotisationGroupeEntity } from '../../domain/entities/cotisation-groupe.entity';
 import { CotisationMembreEntity } from '../../domain/entities/cotisation-membre.entity';
 import { ContributionEntity } from '../../domain/entities/contribution.entity';
+import { TranchePaiementEntity } from '../../domain/entities/tranche-paiement.entity';
 import { GroupeSummary } from '../../domain/repositories/i-cotisation.repository';
 
 // ── Groupe ────────────────────────────────────────────────────────────────────
@@ -60,6 +61,8 @@ export class MembreResponse {
 export class ContributionResponse {
   @ApiProperty() id: string;
   @ApiProperty() montant: number;
+  @ApiProperty() montantPaye: number;
+  @ApiProperty() montantRestant: number;
   @ApiProperty() periode: string;
   @ApiProperty({ enum: PaymentStatus }) statut: PaymentStatus;
   @ApiPropertyOptional({ nullable: true }) datePaiement: Date | null;
@@ -74,6 +77,8 @@ export class ContributionResponse {
     const r = new ContributionResponse();
     r.id = e.id;
     r.montant = e.montant;
+    r.montantPaye = e.montantPaye;
+    r.montantRestant = e.montantRestant();
     r.periode = e.periode;
     r.statut = e.statut;
     r.datePaiement = e.datePaiement;
@@ -85,6 +90,37 @@ export class ContributionResponse {
     r.updatedAt = e.updatedAt;
     return r;
   }
+}
+
+// ── Tranche ───────────────────────────────────────────────────────────────────
+
+export class TranchePaiementResponse {
+  @ApiProperty() id: string;
+  @ApiProperty() montant: number;
+  @ApiProperty() datePaiement: Date;
+  @ApiPropertyOptional({ nullable: true }) referenceId: string | null;
+  @ApiPropertyOptional({ nullable: true }) recuUrl: string | null;
+  @ApiProperty() contributionId: string;
+  @ApiProperty() createdAt: Date;
+
+  static fromEntity(e: TranchePaiementEntity): TranchePaiementResponse {
+    const r = new TranchePaiementResponse();
+    r.id = e.id;
+    r.montant = e.montant;
+    r.datePaiement = e.datePaiement;
+    r.referenceId = e.referenceId;
+    r.recuUrl = e.recuUrl;
+    r.contributionId = e.contributionId;
+    r.createdAt = e.createdAt;
+    return r;
+  }
+}
+
+// ── Résultat d'ajout de tranche ───────────────────────────────────────────────
+
+export class AddTrancheResultResponse {
+  @ApiProperty({ type: TranchePaiementResponse }) tranche: TranchePaiementResponse;
+  @ApiProperty({ type: ContributionResponse }) contribution: ContributionResponse;
 }
 
 // ── Résumé ────────────────────────────────────────────────────────────────────

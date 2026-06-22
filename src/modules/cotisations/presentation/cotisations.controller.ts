@@ -29,11 +29,14 @@ import { UpdateGroupeDto } from '../application/dtos/update-groupe.dto';
 import { AddMembreDto } from '../application/dtos/add-membre.dto';
 import { ConfirmContributionDto } from '../application/dtos/confirm-contribution.dto';
 import { GenererContributionsDto } from '../application/dtos/generer-contributions.dto';
+import { AddTrancheDto } from '../application/dtos/add-tranche.dto';
 import {
+  AddTrancheResultResponse,
   ContributionResponse,
   GroupeResponse,
   GroupeSummaryResponse,
   MembreResponse,
+  TranchePaiementResponse,
 } from '../application/responses/cotisation.response';
 
 import { CreateGroupeUseCase } from '../application/use-cases/create-groupe.use-case';
@@ -47,6 +50,8 @@ import { GenererContributionsUseCase } from '../application/use-cases/generer-co
 import { ConfirmContributionUseCase } from '../application/use-cases/confirm-contribution.use-case';
 import { RejectContributionUseCase } from '../application/use-cases/reject-contribution.use-case';
 import { GetGroupeSummaryUseCase } from '../application/use-cases/get-groupe-summary.use-case';
+import { AddTranchePaiementUseCase } from '../application/use-cases/add-tranche-paiement.use-case';
+import { GetTranchesUseCase } from '../application/use-cases/get-tranches.use-case';
 
 @ApiTags('Cotisations communes')
 @ApiBearerAuth('JWT-auth')
@@ -65,6 +70,8 @@ export class CotisationsController {
     private readonly confirmContributionUseCase: ConfirmContributionUseCase,
     private readonly rejectContributionUseCase: RejectContributionUseCase,
     private readonly getGroupeSummaryUseCase: GetGroupeSummaryUseCase,
+    private readonly addTranchePaiementUseCase: AddTranchePaiementUseCase,
+    private readonly getTranchesUseCase: GetTranchesUseCase,
   ) {}
 
   // ── Groupes ──────────────────────────────────────────────────────────────────
@@ -223,5 +230,40 @@ export class CotisationsController {
   ): Promise<ContributionResponse> {
     const entity = await this.rejectContributionUseCase.execute(id);
     return ContributionResponse.fromEntity(entity);
+  }
+
+  // ── Tranches de paiement ──────────────────────────────────────────────────────
+
+  @Post('contributions/:id/tranches')
+  @ApiOperation({
+    summary: 'Ajouter une tranche de paiement',
+    description:
+      'Permet à un membre de payer sa cotisation en plusieurs fois. ' +
+      'Le statut passe à PARTIEL tant que montantPaye < montant, puis PAYE automatiquement.',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 201, type: AddTrancheResultResponse })
+  @ApiResponse({ status: 400, description: 'Montant dépasse le reste dû' })
+  @ApiResponse({ status: 422, description: 'Contribution déjà soldée ou rejetée' })
+  async addTranche(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AddTrancheDto,
+  ): Promise<AddTrancheResultResponse> {
+    const result = await this.addTranchePaiementUseCase.execute(id, dto);
+    return {
+      tranche: TranchePaiementResponse.fromEntity(result.tranche),
+      contribution: ContributionResponse.fromEntity(result.contribution),
+    };
+  }
+
+  @Get('contributions/:id/tranches')
+  @ApiOperation({ summary: 'Historique des tranches d\'une contribution' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, type: [TranchePaiementResponse] })
+  async getTranches(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<TranchePaiementResponse[]> {
+    const tranches = await this.getTranchesUseCase.execute(id);
+    return tranches.map(TranchePaiementResponse.fromEntity);
   }
 }

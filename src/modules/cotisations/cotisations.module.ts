@@ -15,6 +15,8 @@ import { GenererContributionsUseCase } from './application/use-cases/generer-con
 import { ConfirmContributionUseCase } from './application/use-cases/confirm-contribution.use-case';
 import { RejectContributionUseCase } from './application/use-cases/reject-contribution.use-case';
 import { GetGroupeSummaryUseCase } from './application/use-cases/get-groupe-summary.use-case';
+import { AddTranchePaiementUseCase } from './application/use-cases/add-tranche-paiement.use-case';
+import { GetTranchesUseCase } from './application/use-cases/get-tranches.use-case';
 
 import { CotisationsController } from './presentation/cotisations.controller';
 
@@ -30,6 +32,8 @@ const useCases = [
   ConfirmContributionUseCase,
   RejectContributionUseCase,
   GetGroupeSummaryUseCase,
+  AddTranchePaiementUseCase,
+  GetTranchesUseCase,
 ];
 
 @Module({

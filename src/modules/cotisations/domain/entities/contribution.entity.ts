@@ -4,6 +4,7 @@ export class ContributionEntity {
   constructor(
     public readonly id: string,
     public readonly montant: number,
+    public readonly montantPaye: number,
     public readonly periode: string,
     public readonly statut: PaymentStatus,
     public readonly datePaiement: Date | null,
@@ -15,6 +16,10 @@ export class ContributionEntity {
     public readonly updatedAt: Date,
   ) {}
 
+  montantRestant(): number {
+    return Math.max(0, this.montant - this.montantPaye);
+  }
+
   isPaid(): boolean {
     return this.statut === PaymentStatus.PAYE;
   }
@@ -23,11 +28,25 @@ export class ContributionEntity {
     return this.statut === PaymentStatus.EN_ATTENTE;
   }
 
+  isPartiel(): boolean {
+    return this.statut === PaymentStatus.PARTIEL;
+  }
+
+  canAcceptTranche(): boolean {
+    return (
+      this.statut === PaymentStatus.EN_ATTENTE ||
+      this.statut === PaymentStatus.PARTIEL
+    );
+  }
+
   canBeConfirmed(): boolean {
     return this.statut === PaymentStatus.EN_ATTENTE;
   }
 
   canBeRejected(): boolean {
-    return this.statut === PaymentStatus.EN_ATTENTE;
+    return (
+      this.statut === PaymentStatus.EN_ATTENTE ||
+      this.statut === PaymentStatus.PARTIEL
+    );
   }
 }

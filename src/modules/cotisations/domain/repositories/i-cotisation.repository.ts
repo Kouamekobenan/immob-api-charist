@@ -2,6 +2,7 @@ import { CotisationStatut, PaymentStatus } from '@prisma/client';
 import { CotisationGroupeEntity } from '../entities/cotisation-groupe.entity';
 import { CotisationMembreEntity } from '../entities/cotisation-membre.entity';
 import { ContributionEntity } from '../entities/contribution.entity';
+import { TranchePaiementEntity } from '../entities/tranche-paiement.entity';
 
 export const COTISATION_REPOSITORY = Symbol('COTISATION_REPOSITORY');
 
@@ -35,6 +36,20 @@ export interface ConfirmContributionData {
   referenceId?: string;
   recuUrl?: string;
   datePaiement?: Date;
+}
+
+// ── Tranches ──────────────────────────────────────────────────────────────────
+
+export interface AddTrancheData {
+  montant: number;
+  referenceId?: string;
+  recuUrl?: string;
+  datePaiement?: Date;
+}
+
+export interface AddTrancheResult {
+  tranche: TranchePaiementEntity;
+  contribution: ContributionEntity;
 }
 
 // ── Résumé financier ──────────────────────────────────────────────────────────
@@ -81,6 +96,10 @@ export interface ICotisationRepository {
     statut: PaymentStatus,
     data?: ConfirmContributionData,
   ): Promise<ContributionEntity>;
+
+  // Tranches
+  addTranche(contributionId: string, data: AddTrancheData): Promise<AddTrancheResult>;
+  findTranchesByContribution(contributionId: string): Promise<TranchePaiementEntity[]>;
 
   // Résumé
   getGroupeSummary(groupeId: string, periode: string): Promise<GroupeSummary>;
