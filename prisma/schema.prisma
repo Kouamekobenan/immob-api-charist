@@ -62,6 +62,12 @@ enum PropertyType {
   AUTRE
 }
 
+enum CotisationStatut {
+  ACTIF
+  SUSPENDU
+  CLOTURE
+}
+
 // ==========================================
 // MODÈLES (Tables)
 // ==========================================
@@ -92,6 +98,8 @@ model User {
   depensesPayees  Expense[]    @relation("DepensesPayees")     // Dépenses initiées (si Gérant/Bailleur)
   depensesRecues  Expense[]    @relation("DepensesRecues")     // Dépenses reçues (si Prestataire/Personnel)
   auditLogs       AuditLog[]   // Actions tracées
+  groupesCrees    CotisationGroupe[] @relation("GroupesCrees") // Groupes de cotisation créés
+  memberships     CotisationMembre[] @relation("MembresGroupes") // Participations aux cotisations
 
   @@map("users")
 }
@@ -113,9 +121,10 @@ model Property {
   gerantId    String?
   gerant      User?        @relation("GerantProperties", fields: [gerantId], references: [id])
   
-  contracts   Contract[]
-  tickets     Ticket[]
-  expenses    Expense[]
+  contracts         Contract[]
+  tickets           Ticket[]
+  expenses          Expense[]
+  cotisationGroupes CotisationGroupe[]
 
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
@@ -210,6 +219,8 @@ model Expense {
   property         Property?       @relation(fields: [propertyId], references: [id])
   ticketId         String?         @unique // Dépense liée à une intervention (optionnel)
   ticket           Ticket?         @relation(fields: [ticketId], references: [id])
+  cotisationGroupeId String?       // Décaissement depuis un fonds de cotisation
+  cotisationGroupe   CotisationGroupe? @relation(fields: [cotisationGroupeId], references: [id])
 
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -253,6 +264,10 @@ enum NotificationType {
   // Dépenses
   DEPENSE_CREEE           // Nouvelle dépense enregistrée
   DEPENSE_PAYEE           // Dépense confirmée payée
+  // Cotisations
+  COTISATION_DUE              // Rappel : cotisation du mois à payer
+  COTISATION_PAYEE            // Confirmation de réception du paiement
+  COTISATION_NOUVEAU_GROUPE   // Ajout à un nouveau groupe de cotisation
   // Général
   MESSAGE_DIRECT          // Message direct entre acteurs
   SYSTEME                 // Notification système générale
@@ -276,4 +291,71 @@ model Notification {
   createdAt   DateTime         @default(now())
 
   @@map("notifications")
+}
+
+// ==========================================
+// COTISATIONS COMMUNES
+// ==========================================
+
+model CotisationGroupe {
+  id               String           @id @default(uuid())
+  nom              String           // "Charges Résidence Les Palmiers Bât A"
+  description      String?
+  montantParMembre Float            // Montant mensuel par locataire
+  statut           CotisationStatut @default(ACTIF)
+
+  // Bien/immeuble concerné (optionnel)
+  propertyId       String?
+  property         Property?        @relation(fields: [propertyId], references: [id])
+
+  // Créateur du groupe (gestionnaire ou bailleur)
+  createurId       String
+  createur         User             @relation("GroupesCrees", fields: [createurId], references: [id])
+
+  membres          CotisationMembre[]
+  contributions    Contribution[]
+  decaissements    Expense[]        // Dépenses payées via ce fonds
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@map("cotisation_groupes")
+}
+
+model CotisationMembre {
+  id           String           @id @default(uuid())
+  estTresorier Boolean          @default(false)  // Un seul trésorier actif par groupe
+  estActif     Boolean          @default(true)
+  dateAdhesion DateTime         @default(now())
+
+  groupeId     String
+  groupe       CotisationGroupe @relation(fields: [groupeId], references: [id], onDelete: Cascade)
+  locataireId  String
+  locataire    User             @relation("MembresGroupes", fields: [locataireId], references: [id])
+
+  contributions Contribution[]
+
+  @@unique([groupeId, locataireId])
+  @@map("cotisation_membres")
+}
+
+model Contribution {
+  id           String        @id @default(uuid())
+  montant      Float
+  periode      String        // "06-2026"
+  statut       PaymentStatus @default(EN_ATTENTE)
+  datePaiement DateTime?
+  referenceId  String?       @unique // Référence mobile money
+  recuUrl      String?       // Preuve de paiement (Cloudinary)
+
+  groupeId     String
+  groupe       CotisationGroupe @relation(fields: [groupeId], references: [id])
+  membreId     String
+  membre       CotisationMembre @relation(fields: [membreId], references: [id])
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([groupeId, membreId, periode]) // Un seul paiement par membre par période
+  @@map("contributions")
 }

@@ -14,6 +14,7 @@ import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { StatsModule } from './modules/stats/stats.module';
+import { CotisationsModule } from './modules/cotisations/cotisations.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { StatsModule } from './modules/stats/stats.module';
     ExpensesModule,
     NotificationsModule,
     StatsModule,
+    CotisationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
