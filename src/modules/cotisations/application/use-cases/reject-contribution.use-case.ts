@@ -5,6 +5,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { PaymentStatus } from '@prisma/client';
+import { RejectContributionDto } from '../dtos/reject-contribution.dto';
 import {
   COTISATION_REPOSITORY,
   ICotisationRepository,
@@ -18,14 +19,21 @@ export class RejectContributionUseCase {
     private readonly repo: ICotisationRepository,
   ) {}
 
-  async execute(id: string): Promise<ContributionEntity> {
+  async execute(id: string, dto: RejectContributionDto): Promise<ContributionEntity> {
     const contribution = await this.repo.findContributionById(id);
     if (!contribution) throw new NotFoundException(`Contribution introuvable`);
+
     if (!contribution.canBeRejected()) {
       throw new UnprocessableEntityException(
         `Cette contribution ne peut pas être rejetée (statut: ${contribution.statut})`,
       );
     }
-    return this.repo.updateContributionStatut(id, PaymentStatus.REJETE);
+
+    return this.repo.updateContributionStatut(
+      id,
+      PaymentStatus.REJETE,
+      undefined,
+      dto.motif,
+    );
   }
 }

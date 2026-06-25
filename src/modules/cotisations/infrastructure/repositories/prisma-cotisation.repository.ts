@@ -3,6 +3,7 @@ import { CotisationStatut, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
 import {
   AddMembreData,
+  PeriodeSummary,
   AddTrancheData,
   AddTrancheResult,
   ConfirmContributionData,
@@ -50,7 +51,7 @@ export class PrismaCotisationRepository implements ICotisationRepository {
       id: string; montant: number; montantPaye: number; periode: string;
       statut: PaymentStatus; datePaiement: Date | null; referenceId: string | null;
       recuUrl: string | null; groupeId: string; membreId: string;
-      createdAt: Date; updatedAt: Date;
+      createdAt: Date; updatedAt: Date; motifRejet?: string | null;
       membre?: {
         locataire?: { nom: string; prenom: string } | null;
         groupe?: { nom: string } | null;
@@ -64,6 +65,7 @@ export class PrismaCotisationRepository implements ICotisationRepository {
       c.membre?.locataire?.nom ?? null,
       c.membre?.locataire?.prenom ?? null,
       c.membre?.groupe?.nom ?? null,
+      c.motifRejet ?? null,
     );
   }
 
@@ -186,6 +188,20 @@ export class PrismaCotisationRepository implements ICotisationRepository {
     return this.toContributionEntity(c);
   }
 
+  async hasContributionsForPeriode(groupeId: string, periode: string): Promise<boolean> {
+    const count = await this.prisma.contribution.count({ where: { groupeId, periode } });
+    return count > 0;
+  }
+
+  async createContributionsBulk(contributions: Array<{
+    groupeId: string; membreId: string; montant: number; periode: string;
+  }>): Promise<ContributionEntity[]> {
+    const created = await this.prisma.$transaction(
+      contributions.map((data) => this.prisma.contribution.create({ data })),
+    );
+    return created.map((c) => this.toContributionEntity(c));
+  }
+
   async findContribution(
     groupeId: string, membreId: string, periode: string,
   ): Promise<ContributionEntity | null> {
@@ -206,7 +222,7 @@ export class PrismaCotisationRepository implements ICotisationRepository {
     const contributions = await this.prisma.contribution.findMany({
       where: { groupeId, ...(periode && { periode }) },
       orderBy: { createdAt: 'desc' },
-      include: { membre: { include: { locataire: true } } },
+      include: { membre: { include: { locataire: true, groupe: true } } },
     });
     return contributions.map((c) => this.toContributionEntity(c));
   }
@@ -221,7 +237,7 @@ export class PrismaCotisationRepository implements ICotisationRepository {
   }
 
   async updateContributionStatut(
-    id: string, statut: PaymentStatus, data?: ConfirmContributionData,
+    id: string, statut: PaymentStatus, data?: ConfirmContributionData, motifRejet?: string,
   ): Promise<ContributionEntity> {
     const current = await this.prisma.contribution.findUniqueOrThrow({ where: { id } });
     const c = await this.prisma.contribution.update({
@@ -234,6 +250,7 @@ export class PrismaCotisationRepository implements ICotisationRepository {
         }),
         ...(data?.referenceId !== undefined && { referenceId: data.referenceId }),
         ...(data?.recuUrl !== undefined && { recuUrl: data.recuUrl }),
+        ...(motifRejet !== undefined && { motifRejet }),
       },
     });
     return this.toContributionEntity(c);
@@ -300,12 +317,69 @@ export class PrismaCotisationRepository implements ICotisationRepository {
 
     return {
       totalAttendu: entities.reduce((sum, c) => sum + c.montant, 0),
-      // Utilise montantPaye pour capturer les paiements partiels aussi
       totalCollecte: entities.reduce((sum, c) => sum + c.montantPaye, 0),
       totalEnAttente: enAttente.reduce((sum, c) => sum + c.montantRestant(), 0),
       nombreMembresPayes: payes.length,
       nombreMembresEnAttente: enAttente.length,
       contributions: entities,
     };
+  }
+
+  async getHistoriqueGroupePeriodes(groupeId: string): Promise<PeriodeSummary[]> {
+    // Agrégation par période en une seule requête SQL via groupBy
+    const rows = await this.prisma.contribution.groupBy({
+      by: ['periode', 'statut'],
+      where: { groupeId },
+      _count: { id: true },
+      _sum: { montant: true, montantPaye: true },
+      orderBy: { periode: 'desc' },
+    });
+
+    // Regrouper les lignes par période (une ligne par statut)
+    const periodeMap = new Map<string, PeriodeSummary>();
+
+    for (const row of rows) {
+      if (!periodeMap.has(row.periode)) {
+        periodeMap.set(row.periode, {
+          periode: row.periode,
+          totalAttendu: 0,
+          totalCollecte: 0,
+          totalEnAttente: 0,
+          nombreMembres: 0,
+          nombrePaye: 0,
+          nombrePartiel: 0,
+          nombreEnAttente: 0,
+          nombreRejete: 0,
+        });
+      }
+
+      const p = periodeMap.get(row.periode)!;
+      const count = row._count.id;
+      const sumMontant = row._sum.montant ?? 0;
+      const sumPaye = row._sum.montantPaye ?? 0;
+
+      p.nombreMembres += count;
+      p.totalAttendu += sumMontant;
+      p.totalCollecte += sumPaye;
+
+      switch (row.statut) {
+        case PaymentStatus.PAYE:
+          p.nombrePaye += count;
+          break;
+        case PaymentStatus.PARTIEL:
+          p.nombrePartiel += count;
+          p.totalEnAttente += sumMontant - sumPaye;
+          break;
+        case PaymentStatus.EN_ATTENTE:
+          p.nombreEnAttente += count;
+          p.totalEnAttente += sumMontant - sumPaye;
+          break;
+        case PaymentStatus.REJETE:
+          p.nombreRejete += count;
+          break;
+      }
+    }
+
+    return Array.from(periodeMap.values());
   }
 }

@@ -63,6 +63,18 @@ export interface GroupeSummary {
   contributions: ContributionEntity[];
 }
 
+export interface PeriodeSummary {
+  periode: string;
+  totalAttendu: number;
+  totalCollecte: number;
+  totalEnAttente: number;
+  nombreMembres: number;
+  nombrePaye: number;
+  nombrePartiel: number;
+  nombreEnAttente: number;
+  nombreRejete: number;
+}
+
 // ── Interface ─────────────────────────────────────────────────────────────────
 
 export interface ICotisationRepository {
@@ -88,6 +100,13 @@ export interface ICotisationRepository {
     montant: number;
     periode: string;
   }): Promise<ContributionEntity>;
+  createContributionsBulk(contributions: Array<{
+    groupeId: string;
+    membreId: string;
+    montant: number;
+    periode: string;
+  }>): Promise<ContributionEntity[]>;
+  hasContributionsForPeriode(groupeId: string, periode: string): Promise<boolean>;
   findContribution(groupeId: string, membreId: string, periode: string): Promise<ContributionEntity | null>;
   findContributionById(id: string): Promise<ContributionEntity | null>;
   findContributionsByGroupe(groupeId: string, periode?: string): Promise<ContributionEntity[]>;
@@ -96,6 +115,7 @@ export interface ICotisationRepository {
     id: string,
     statut: PaymentStatus,
     data?: ConfirmContributionData,
+    motifRejet?: string,
   ): Promise<ContributionEntity>;
 
   // Tranches
@@ -104,4 +124,5 @@ export interface ICotisationRepository {
 
   // Résumé
   getGroupeSummary(groupeId: string, periode: string): Promise<GroupeSummary>;
+  getHistoriqueGroupePeriodes(groupeId: string): Promise<PeriodeSummary[]>;
 }

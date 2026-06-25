@@ -7,6 +7,7 @@ import { TranchePaiementEntity } from '../../domain/entities/tranche-paiement.en
 import { GroupeSummary } from '../../domain/repositories/i-cotisation.repository';
 import type { MonBilan } from '../use-cases/get-mes-contributions.use-case';
 import type { MonGroupe } from '../use-cases/get-mes-groupes.use-case';
+import type { PeriodeSummary } from '../../domain/repositories/i-cotisation.repository';
 
 // ── Groupe ────────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,8 @@ export class ContributionResponse {
   @ApiProperty() membreId: string;
   @ApiPropertyOptional({ nullable: true }) membreNom: string | null;
   @ApiPropertyOptional({ nullable: true }) membrePrenom: string | null;
+  @ApiPropertyOptional({ nullable: true }) groupeNom: string | null;
+  @ApiPropertyOptional({ nullable: true }) motifRejet: string | null;
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;
 
@@ -96,6 +99,8 @@ export class ContributionResponse {
     r.membreId = e.membreId;
     r.membreNom = e.membreNom;
     r.membrePrenom = e.membrePrenom;
+    r.groupeNom = e.groupeNom;
+    r.motifRejet = e.motifRejet;
     r.createdAt = e.createdAt;
     r.updatedAt = e.updatedAt;
     return r;
@@ -186,6 +191,34 @@ export class MonBilanResponse {
     r.totalPaye = b.totalPaye;
     r.totalRestant = b.totalRestant;
     r.contributions = b.contributions.map(ContributionResponse.fromEntity);
+    return r;
+  }
+}
+
+// ── Historique périodes ───────────────────────────────────────────────────────
+
+export class HistoriquePeriodeResponse {
+  @ApiProperty() periode: string;
+  @ApiProperty() totalAttendu: number;
+  @ApiProperty() totalCollecte: number;
+  @ApiProperty() totalEnAttente: number;
+  @ApiProperty() nombreMembres: number;
+  @ApiProperty() nombrePaye: number;
+  @ApiProperty() nombrePartiel: number;
+  @ApiProperty() nombreEnAttente: number;
+  @ApiProperty() nombreRejete: number;
+
+  static fromSummary(s: PeriodeSummary): HistoriquePeriodeResponse {
+    const r = new HistoriquePeriodeResponse();
+    r.periode = s.periode;
+    r.totalAttendu = s.totalAttendu;
+    r.totalCollecte = s.totalCollecte;
+    r.totalEnAttente = s.totalEnAttente;
+    r.nombreMembres = s.nombreMembres;
+    r.nombrePaye = s.nombrePaye;
+    r.nombrePartiel = s.nombrePartiel;
+    r.nombreEnAttente = s.nombreEnAttente;
+    r.nombreRejete = s.nombreRejete;
     return r;
   }
 }

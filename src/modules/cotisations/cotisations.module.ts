@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { RolesGuard } from '../../shared/guards/roles.guard';
 
 import { COTISATION_REPOSITORY } from './domain/repositories/i-cotisation.repository';
 import { PrismaCotisationRepository } from './infrastructure/repositories/prisma-cotisation.repository';
@@ -21,6 +22,7 @@ import { GetMesGroupesUseCase } from './application/use-cases/get-mes-groupes.us
 import { GetMesContributionsUseCase } from './application/use-cases/get-mes-contributions.use-case';
 import { PayerToutUseCase } from './application/use-cases/payer-tout.use-case';
 import { GetMembresGroupeUseCase } from './application/use-cases/get-membres-groupe.use-case';
+import { GetHistoriqueGroupeUseCase } from './application/use-cases/get-historique-groupe.use-case';
 
 import { CotisationsController } from './presentation/cotisations.controller';
 
@@ -42,6 +44,7 @@ const useCases = [
   GetMesContributionsUseCase,
   PayerToutUseCase,
   GetMembresGroupeUseCase,
+  GetHistoriqueGroupeUseCase,
 ];
 
 @Module({
@@ -49,6 +52,7 @@ const useCases = [
   controllers: [CotisationsController],
   providers: [
     { provide: COTISATION_REPOSITORY, useClass: PrismaCotisationRepository },
+    RolesGuard,
     ...useCases,
   ],
 })

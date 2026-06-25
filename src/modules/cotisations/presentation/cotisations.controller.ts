@@ -10,7 +10,6 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -21,13 +20,18 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Request } from 'express';
+import { Role } from '@prisma/client';
 
 import { JwtAuthGuard } from '../../auth/presentation/guards/jwt-auth.guard';
+import { CurrentUser, CurrentUserData } from '../../auth/presentation/decorators/current-user.decorator';
+import { RolesGuard } from '../../../shared/guards/roles.guard';
+import { Roles } from '../../../shared/decorators/roles.decorator';
+
 import { CreateGroupeDto } from '../application/dtos/create-groupe.dto';
 import { UpdateGroupeDto } from '../application/dtos/update-groupe.dto';
 import { AddMembreDto } from '../application/dtos/add-membre.dto';
 import { ConfirmContributionDto } from '../application/dtos/confirm-contribution.dto';
+import { RejectContributionDto } from '../application/dtos/reject-contribution.dto';
 import { GenererContributionsDto } from '../application/dtos/generer-contributions.dto';
 import { AddTrancheDto } from '../application/dtos/add-tranche.dto';
 import {
@@ -35,6 +39,7 @@ import {
   ContributionResponse,
   GroupeResponse,
   GroupeSummaryResponse,
+  HistoriquePeriodeResponse,
   MembreResponse,
   MonBilanResponse,
   MonGroupeResponse,
@@ -58,10 +63,14 @@ import { GetMesGroupesUseCase } from '../application/use-cases/get-mes-groupes.u
 import { GetMesContributionsUseCase } from '../application/use-cases/get-mes-contributions.use-case';
 import { PayerToutUseCase } from '../application/use-cases/payer-tout.use-case';
 import { GetMembresGroupeUseCase } from '../application/use-cases/get-membres-groupe.use-case';
+import { GetHistoriqueGroupeUseCase } from '../application/use-cases/get-historique-groupe.use-case';
+
+/** Rôles autorisés à gérer les groupes et contributions (côté gestionnaire) */
+const GESTIONNAIRE_ROLES = [Role.SUPER_ADMIN, Role.BAILLEUR, Role.GERANT];
 
 @ApiTags('Cotisations communes')
 @ApiBearerAuth('JWT-auth')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('cotisations')
 export class CotisationsController {
   constructor(
@@ -82,27 +91,34 @@ export class CotisationsController {
     private readonly getMesContributionsUseCase: GetMesContributionsUseCase,
     private readonly payerToutUseCase: PayerToutUseCase,
     private readonly getMembresGroupeUseCase: GetMembresGroupeUseCase,
+    private readonly getHistoriqueGroupeUseCase: GetHistoriqueGroupeUseCase,
   ) {}
 
   // ── Groupes ──────────────────────────────────────────────────────────────────
 
   @Post('groupes')
+  @Roles(...GESTIONNAIRE_ROLES)
   @ApiOperation({ summary: 'Créer un groupe de cotisation' })
   @ApiResponse({ status: 201, type: GroupeResponse })
+  @ApiResponse({ status: 403, description: 'Réservé aux SUPER_ADMIN, BAILLEUR, GERANT' })
   async createGroupe(
     @Body() dto: CreateGroupeDto,
-    @Req() req: Request,
+    @CurrentUser() user: CurrentUserData,
   ): Promise<GroupeResponse> {
-    const createurId = (req.user as any).id;
-    const entity = await this.createGroupeUseCase.execute(dto, createurId);
+    const entity = await this.createGroupeUseCase.execute(dto, user.id);
     return GroupeResponse.fromEntity(entity);
   }
 
   @Get('groupes')
-  @ApiOperation({ summary: 'Lister tous les groupes de cotisation' })
+  @ApiOperation({
+    summary: 'Mes groupes de cotisation (gestionnaire)',
+    description:
+      'SUPER_ADMIN voit tous les groupes. BAILLEUR et GERANT ne voient que leurs propres groupes.',
+  })
   @ApiResponse({ status: 200, type: [GroupeResponse] })
-  async findAllGroupes(): Promise<GroupeResponse[]> {
-    const groupes = await this.getAllGroupesUseCase.execute();
+  async findAllGroupes(@CurrentUser() user: CurrentUserData): Promise<GroupeResponse[]> {
+    const createurId = user.role === Role.SUPER_ADMIN ? undefined : user.id;
+    const groupes = await this.getAllGroupesUseCase.execute(createurId);
     return groupes.map(GroupeResponse.fromEntity);
   }
 
@@ -116,9 +132,11 @@ export class CotisationsController {
   }
 
   @Patch('groupes/:id')
+  @Roles(...GESTIONNAIRE_ROLES)
   @ApiOperation({ summary: 'Modifier un groupe (nom, montant, statut)' })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 200, type: GroupeResponse })
+  @ApiResponse({ status: 403, description: 'Réservé aux SUPER_ADMIN, BAILLEUR, GERANT' })
   async updateGroupe(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateGroupeDto,
@@ -145,6 +163,21 @@ export class CotisationsController {
     return GroupeSummaryResponse.fromSummary(summary);
   }
 
+  @Get('groupes/:id/historique')
+  @ApiOperation({
+    summary: 'Historique des périodes d\'un groupe',
+    description: 'Retourne un résumé financier par période (montants, nombre de membres payés, partiels, en attente, rejetés).',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, type: [HistoriquePeriodeResponse] })
+  @ApiResponse({ status: 404, description: 'Groupe introuvable' })
+  async getHistoriqueGroupe(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<HistoriquePeriodeResponse[]> {
+    const periodes = await this.getHistoriqueGroupeUseCase.execute(id);
+    return periodes.map(HistoriquePeriodeResponse.fromSummary);
+  }
+
   // ── Membres ───────────────────────────────────────────────────────────────────
 
   @Get('groupes/:id/membres')
@@ -157,9 +190,13 @@ export class CotisationsController {
   }
 
   @Post('groupes/:id/membres')
+  @Roles(...GESTIONNAIRE_ROLES)
   @ApiOperation({ summary: 'Ajouter un locataire au groupe' })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 201, type: MembreResponse })
+  @ApiResponse({ status: 403, description: 'Réservé aux SUPER_ADMIN, BAILLEUR, GERANT' })
+  @ApiResponse({ status: 404, description: 'Groupe ou locataire introuvable' })
+  @ApiResponse({ status: 409, description: 'Locataire déjà membre de ce groupe' })
   async addMembre(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AddMembreDto,
@@ -169,11 +206,13 @@ export class CotisationsController {
   }
 
   @Patch('groupes/:groupeId/membres/:membreId/tresorier')
+  @Roles(...GESTIONNAIRE_ROLES)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Désigner ce membre comme trésorier du groupe' })
   @ApiParam({ name: 'groupeId', type: String, format: 'uuid' })
   @ApiParam({ name: 'membreId', type: String, format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Trésorier désigné' })
+  @ApiResponse({ status: 403, description: 'Réservé aux SUPER_ADMIN, BAILLEUR, GERANT' })
   async setTresorier(
     @Param('groupeId', ParseUUIDPipe) groupeId: string,
     @Param('membreId', ParseUUIDPipe) membreId: string,
@@ -182,11 +221,13 @@ export class CotisationsController {
   }
 
   @Delete('groupes/:groupeId/membres/:membreId')
+  @Roles(...GESTIONNAIRE_ROLES)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Retirer un membre du groupe (désactivation)' })
   @ApiParam({ name: 'groupeId', type: String, format: 'uuid' })
   @ApiParam({ name: 'membreId', type: String, format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Membre retiré' })
+  @ApiResponse({ status: 403, description: 'Réservé aux SUPER_ADMIN, BAILLEUR, GERANT' })
   async removeMembre(
     @Param('groupeId', ParseUUIDPipe) groupeId: string,
     @Param('membreId', ParseUUIDPipe) membreId: string,
@@ -197,6 +238,7 @@ export class CotisationsController {
   // ── Contributions ─────────────────────────────────────────────────────────────
 
   @Post('groupes/:id/contributions/generer')
+  @Roles(...GESTIONNAIRE_ROLES)
   @ApiOperation({
     summary: 'Générer les avis de cotisation du mois',
     description:
@@ -204,6 +246,8 @@ export class CotisationsController {
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 201, type: [ContributionResponse] })
+  @ApiResponse({ status: 403, description: 'Réservé aux SUPER_ADMIN, BAILLEUR, GERANT' })
+  @ApiResponse({ status: 409, description: 'Contributions déjà générées pour cette période' })
   async genererContributions(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: GenererContributionsDto,
@@ -221,16 +265,20 @@ export class CotisationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Query('periode') periode?: string,
   ): Promise<ContributionResponse[]> {
-    // We reuse the summary which fetches contributions, or can call repo directly via use case
     const summary = await this.getGroupeSummaryUseCase.execute(id, periode);
     return summary.contributions.map(ContributionResponse.fromEntity);
   }
 
   @Patch('contributions/:id/confirm')
+  @Roles(...GESTIONNAIRE_ROLES)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Confirmer la réception d\'une contribution (marquer PAYE)' })
+  @ApiOperation({
+    summary: 'Confirmer la réception d\'une contribution (marquer PAYE)',
+    description: 'Fonctionne aussi sur une contribution PARTIEL (solde le reste manuellement).',
+  })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 200, type: ContributionResponse })
+  @ApiResponse({ status: 403, description: 'Réservé aux SUPER_ADMIN, BAILLEUR, GERANT' })
   async confirmContribution(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ConfirmContributionDto,
@@ -240,14 +288,17 @@ export class CotisationsController {
   }
 
   @Patch('contributions/:id/reject')
+  @Roles(...GESTIONNAIRE_ROLES)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rejeter une contribution' })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 200, type: ContributionResponse })
+  @ApiResponse({ status: 403, description: 'Réservé aux SUPER_ADMIN, BAILLEUR, GERANT' })
   async rejectContribution(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RejectContributionDto,
   ): Promise<ContributionResponse> {
-    const entity = await this.rejectContributionUseCase.execute(id);
+    const entity = await this.rejectContributionUseCase.execute(id, dto);
     return ContributionResponse.fromEntity(entity);
   }
 
@@ -296,11 +347,10 @@ export class CotisationsController {
   @ApiQuery({ name: 'periode', required: false, example: '06-2026', description: 'MM-YYYY (défaut: mois courant)' })
   @ApiResponse({ status: 200, type: [MonGroupeResponse] })
   async getMesGroupes(
-    @Req() req: Request,
+    @CurrentUser() user: CurrentUserData,
     @Query('periode') periode?: string,
   ): Promise<MonGroupeResponse[]> {
-    const locataireId = (req.user as any).id;
-    const result = await this.getMesGroupesUseCase.execute(locataireId, periode);
+    const result = await this.getMesGroupesUseCase.execute(user.id, periode);
     return result.map(MonGroupeResponse.fromMonGroupe);
   }
 
@@ -312,11 +362,10 @@ export class CotisationsController {
   @ApiQuery({ name: 'periode', required: false, example: '06-2026', description: 'Filtrer par période MM-YYYY' })
   @ApiResponse({ status: 200, type: MonBilanResponse })
   async getMesBilan(
-    @Req() req: Request,
+    @CurrentUser() user: CurrentUserData,
     @Query('periode') periode?: string,
   ): Promise<MonBilanResponse> {
-    const locataireId = (req.user as any).id;
-    const bilan = await this.getMesContributionsUseCase.execute(locataireId, periode);
+    const bilan = await this.getMesContributionsUseCase.execute(user.id, periode);
     return MonBilanResponse.fromBilan(bilan);
   }
 
@@ -324,7 +373,8 @@ export class CotisationsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Payer la totalité restante d\'une contribution',
-    description: 'Soldé la contribution en une seule fois. Équivalent à addTranche(montantRestant). Réservé au membre propriétaire de la contribution.',
+    description:
+      'Solde la contribution en une seule fois. Réservé au membre propriétaire de la contribution.',
   })
   @ApiParam({ name: 'id', type: String, format: 'uuid' })
   @ApiResponse({ status: 200, type: AddTrancheResultResponse })
@@ -332,11 +382,10 @@ export class CotisationsController {
   @ApiResponse({ status: 422, description: 'Contribution déjà soldée ou rejetée' })
   async payerTout(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ConfirmContributionDto,
-    @Req() req: Request,
+    @Body() dto: AddTrancheDto,
+    @CurrentUser() user: CurrentUserData,
   ): Promise<AddTrancheResultResponse> {
-    const locataireId = (req.user as any).id;
-    const result = await this.payerToutUseCase.execute(id, locataireId, dto);
+    const result = await this.payerToutUseCase.execute(id, user.id, dto);
     return {
       tranche: TranchePaiementResponse.fromEntity(result.tranche),
       contribution: ContributionResponse.fromEntity(result.contribution),

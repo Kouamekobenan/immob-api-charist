@@ -22,6 +22,7 @@ export class GenererContributionsUseCase {
   async execute(groupeId: string, dto: GenererContributionsDto): Promise<ContributionEntity[]> {
     const groupe = await this.repo.findGroupeById(groupeId);
     if (!groupe) throw new NotFoundException(`Groupe de cotisation introuvable`);
+
     if (!groupe.canGenererContributions()) {
       throw new UnprocessableEntityException(
         `Impossible de générer des contributions pour un groupe ${groupe.statut}`,
@@ -35,30 +36,27 @@ export class GenererContributionsUseCase {
       throw new UnprocessableEntityException(`Le groupe n'a aucun membre actif`);
     }
 
-    const created: ContributionEntity[] = [];
+    // Vérification globale AVANT toute création — évite la race condition
+    const dejaGenerees = await this.repo.hasContributionsForPeriode(groupeId, periode);
+    if (dejaGenerees) {
+      throw new ConflictException(
+        `Les contributions pour la période ${periode} existent déjà`,
+      );
+    }
 
-    for (const membre of membres) {
-      const existante = await this.repo.findContribution(groupeId, membre.id, periode);
-      if (existante) {
-        throw new ConflictException(
-          `Les contributions pour la période ${periode} existent déjà`,
-        );
-      }
-      const contribution = await this.repo.createContribution({
+    // Création atomique de toutes les contributions en une seule transaction
+    return this.repo.createContributionsBulk(
+      membres.map((membre) => ({
         groupeId,
         membreId: membre.id,
         montant: groupe.montantParMembre,
         periode,
-      });
-      created.push(contribution);
-    }
-
-    return created;
+      })),
+    );
   }
 
   private currentPeriode(): string {
     const now = new Date();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    return `${month}-${now.getFullYear()}`;
+    return `${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`;
   }
 }

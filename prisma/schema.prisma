@@ -320,6 +320,7 @@ model CotisationGroupe {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
+  @@index([createurId])
   @@map("cotisation_groupes")
 }
 
@@ -337,6 +338,7 @@ model CotisationMembre {
   contributions Contribution[]
 
   @@unique([groupeId, locataireId])
+  @@index([locataireId])
   @@map("cotisation_membres")
 }
 
@@ -348,6 +350,7 @@ model Contribution {
   datePaiement DateTime?
   referenceId  String?       @unique // Référence mobile money
   recuUrl      String?       // Preuve de paiement (Cloudinary)
+  motifRejet   String?       // Raison du rejet, renseignée par le gestionnaire
 
   montantPaye  Float         @default(0)  // Cumul des tranches versées
 
@@ -362,6 +365,8 @@ model Contribution {
   updatedAt    DateTime      @updatedAt
 
   @@unique([groupeId, membreId, periode])
+  @@index([groupeId, periode])
+  @@index([membreId])
   @@map("contributions")
 }
 
@@ -377,5 +382,6 @@ model TranchePaiement {
 
   createdAt      DateTime     @default(now())
 
+  @@index([contributionId])
   @@map("tranches_paiement")
 }

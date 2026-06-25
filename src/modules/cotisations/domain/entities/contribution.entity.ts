@@ -17,6 +17,7 @@ export class ContributionEntity {
     public readonly membreNom: string | null = null,
     public readonly membrePrenom: string | null = null,
     public readonly groupeNom: string | null = null,
+    public readonly motifRejet: string | null = null,
   ) {}
 
   montantRestant(): number {
@@ -43,7 +44,10 @@ export class ContributionEntity {
   }
 
   canBeConfirmed(): boolean {
-    return this.statut === PaymentStatus.EN_ATTENTE;
+    return (
+      this.statut === PaymentStatus.EN_ATTENTE ||
+      this.statut === PaymentStatus.PARTIEL
+    );
   }
 
   canBeRejected(): boolean {
