@@ -30,7 +30,6 @@ type PrismaPayment = {
 @Injectable()
 export class PrismaPaymentRepository implements IPaymentRepository {
   constructor(private readonly prisma: PrismaService) {}
-
   async findById(id: string): Promise<PaymentEntity | null> {
     const p = await this.prisma.payment.findUnique({ where: { id } });
     return p ? this.toEntity(p) : null;
@@ -108,7 +107,6 @@ export class PrismaPaymentRepository implements IPaymentRepository {
   async delete(id: string): Promise<void> {
     await this.prisma.payment.delete({ where: { id } });
   }
-
   private toEntity(p: PrismaPayment): PaymentEntity {
     return new PaymentEntity(
       p.id,

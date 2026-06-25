@@ -6,5 +6,7 @@ export class CotisationMembreEntity {
     public readonly estTresorier: boolean,
     public readonly estActif: boolean,
     public readonly dateAdhesion: Date,
+    public readonly nom: string | null = null,
+    public readonly prenom: string | null = null,
   ) {}
 }

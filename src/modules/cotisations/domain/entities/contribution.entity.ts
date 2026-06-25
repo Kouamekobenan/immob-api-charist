@@ -14,6 +14,9 @@ export class ContributionEntity {
     public readonly membreId: string,
     public readonly createdAt: Date,
     public readonly updatedAt: Date,
+    public readonly membreNom: string | null = null,
+    public readonly membrePrenom: string | null = null,
+    public readonly groupeNom: string | null = null,
   ) {}
 
   montantRestant(): number {

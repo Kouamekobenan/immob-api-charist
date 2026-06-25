@@ -17,6 +17,10 @@ import { RejectContributionUseCase } from './application/use-cases/reject-contri
 import { GetGroupeSummaryUseCase } from './application/use-cases/get-groupe-summary.use-case';
 import { AddTranchePaiementUseCase } from './application/use-cases/add-tranche-paiement.use-case';
 import { GetTranchesUseCase } from './application/use-cases/get-tranches.use-case';
+import { GetMesGroupesUseCase } from './application/use-cases/get-mes-groupes.use-case';
+import { GetMesContributionsUseCase } from './application/use-cases/get-mes-contributions.use-case';
+import { PayerToutUseCase } from './application/use-cases/payer-tout.use-case';
+import { GetMembresGroupeUseCase } from './application/use-cases/get-membres-groupe.use-case';
 
 import { CotisationsController } from './presentation/cotisations.controller';
 
@@ -34,6 +38,10 @@ const useCases = [
   GetGroupeSummaryUseCase,
   AddTranchePaiementUseCase,
   GetTranchesUseCase,
+  GetMesGroupesUseCase,
+  GetMesContributionsUseCase,
+  PayerToutUseCase,
+  GetMembresGroupeUseCase,
 ];
 
 @Module({

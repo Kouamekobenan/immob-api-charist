@@ -77,6 +77,7 @@ export interface ICotisationRepository {
   findMembre(groupeId: string, locataireId: string): Promise<CotisationMembreEntity | null>;
   findMembreById(membreId: string): Promise<CotisationMembreEntity | null>;
   findMembresActifs(groupeId: string): Promise<CotisationMembreEntity[]>;
+  findMembresByLocataire(locataireId: string): Promise<CotisationMembreEntity[]>;
   setTresorier(groupeId: string, membreId: string): Promise<void>;
   removeMembre(membreId: string): Promise<void>;
 

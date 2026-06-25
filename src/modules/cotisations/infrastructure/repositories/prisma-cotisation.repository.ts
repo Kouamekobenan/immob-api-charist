@@ -36,22 +36,34 @@ export class PrismaCotisationRepository implements ICotisationRepository {
   private toMembreEntity(m: {
     id: string; groupeId: string; locataireId: string;
     estTresorier: boolean; estActif: boolean; dateAdhesion: Date;
+    locataire?: { nom: string; prenom: string } | null;
   }): CotisationMembreEntity {
     return new CotisationMembreEntity(
       m.id, m.groupeId, m.locataireId, m.estTresorier, m.estActif, m.dateAdhesion,
+      m.locataire?.nom ?? null,
+      m.locataire?.prenom ?? null,
     );
   }
 
-  private toContributionEntity(c: {
-    id: string; montant: number; montantPaye: number; periode: string;
-    statut: PaymentStatus; datePaiement: Date | null; referenceId: string | null;
-    recuUrl: string | null; groupeId: string; membreId: string;
-    createdAt: Date; updatedAt: Date;
-  }): ContributionEntity {
+  private toContributionEntity(
+    c: {
+      id: string; montant: number; montantPaye: number; periode: string;
+      statut: PaymentStatus; datePaiement: Date | null; referenceId: string | null;
+      recuUrl: string | null; groupeId: string; membreId: string;
+      createdAt: Date; updatedAt: Date;
+      membre?: {
+        locataire?: { nom: string; prenom: string } | null;
+        groupe?: { nom: string } | null;
+      } | null;
+    },
+  ): ContributionEntity {
     return new ContributionEntity(
       c.id, c.montant, c.montantPaye, c.periode, c.statut,
       c.datePaiement, c.referenceId, c.recuUrl,
       c.groupeId, c.membreId, c.createdAt, c.updatedAt,
+      c.membre?.locataire?.nom ?? null,
+      c.membre?.locataire?.prenom ?? null,
+      c.membre?.groupe?.nom ?? null,
     );
   }
 
@@ -131,6 +143,16 @@ export class PrismaCotisationRepository implements ICotisationRepository {
   async findMembresActifs(groupeId: string): Promise<CotisationMembreEntity[]> {
     const membres = await this.prisma.cotisationMembre.findMany({
       where: { groupeId, estActif: true },
+      include: { locataire: true },
+      orderBy: { dateAdhesion: 'asc' },
+    });
+    return membres.map((m) => this.toMembreEntity(m));
+  }
+
+  async findMembresByLocataire(locataireId: string): Promise<CotisationMembreEntity[]> {
+    const membres = await this.prisma.cotisationMembre.findMany({
+      where: { locataireId, estActif: true },
+      orderBy: { dateAdhesion: 'desc' },
     });
     return membres.map((m) => this.toMembreEntity(m));
   }
@@ -184,6 +206,7 @@ export class PrismaCotisationRepository implements ICotisationRepository {
     const contributions = await this.prisma.contribution.findMany({
       where: { groupeId, ...(periode && { periode }) },
       orderBy: { createdAt: 'desc' },
+      include: { membre: { include: { locataire: true } } },
     });
     return contributions.map((c) => this.toContributionEntity(c));
   }
@@ -192,6 +215,7 @@ export class PrismaCotisationRepository implements ICotisationRepository {
     const contributions = await this.prisma.contribution.findMany({
       where: { membreId },
       orderBy: { createdAt: 'desc' },
+      include: { membre: { include: { locataire: true, groupe: true } } },
     });
     return contributions.map((c) => this.toContributionEntity(c));
   }
@@ -265,6 +289,7 @@ export class PrismaCotisationRepository implements ICotisationRepository {
   async getGroupeSummary(groupeId: string, periode: string): Promise<GroupeSummary> {
     const contributions = await this.prisma.contribution.findMany({
       where: { groupeId, periode },
+      include: { membre: { include: { locataire: true } } },
     });
 
     const entities = contributions.map((c) => this.toContributionEntity(c));

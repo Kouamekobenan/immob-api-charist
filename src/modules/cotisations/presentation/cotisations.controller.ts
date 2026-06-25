@@ -36,6 +36,8 @@ import {
   GroupeResponse,
   GroupeSummaryResponse,
   MembreResponse,
+  MonBilanResponse,
+  MonGroupeResponse,
   TranchePaiementResponse,
 } from '../application/responses/cotisation.response';
 
@@ -52,6 +54,10 @@ import { RejectContributionUseCase } from '../application/use-cases/reject-contr
 import { GetGroupeSummaryUseCase } from '../application/use-cases/get-groupe-summary.use-case';
 import { AddTranchePaiementUseCase } from '../application/use-cases/add-tranche-paiement.use-case';
 import { GetTranchesUseCase } from '../application/use-cases/get-tranches.use-case';
+import { GetMesGroupesUseCase } from '../application/use-cases/get-mes-groupes.use-case';
+import { GetMesContributionsUseCase } from '../application/use-cases/get-mes-contributions.use-case';
+import { PayerToutUseCase } from '../application/use-cases/payer-tout.use-case';
+import { GetMembresGroupeUseCase } from '../application/use-cases/get-membres-groupe.use-case';
 
 @ApiTags('Cotisations communes')
 @ApiBearerAuth('JWT-auth')
@@ -72,6 +78,10 @@ export class CotisationsController {
     private readonly getGroupeSummaryUseCase: GetGroupeSummaryUseCase,
     private readonly addTranchePaiementUseCase: AddTranchePaiementUseCase,
     private readonly getTranchesUseCase: GetTranchesUseCase,
+    private readonly getMesGroupesUseCase: GetMesGroupesUseCase,
+    private readonly getMesContributionsUseCase: GetMesContributionsUseCase,
+    private readonly payerToutUseCase: PayerToutUseCase,
+    private readonly getMembresGroupeUseCase: GetMembresGroupeUseCase,
   ) {}
 
   // ── Groupes ──────────────────────────────────────────────────────────────────
@@ -136,6 +146,15 @@ export class CotisationsController {
   }
 
   // ── Membres ───────────────────────────────────────────────────────────────────
+
+  @Get('groupes/:id/membres')
+  @ApiOperation({ summary: 'Lister les membres actifs d\'un groupe' })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, type: [MembreResponse] })
+  async getMembres(@Param('id', ParseUUIDPipe) id: string): Promise<MembreResponse[]> {
+    const membres = await this.getMembresGroupeUseCase.execute(id);
+    return membres.map(MembreResponse.fromEntity);
+  }
 
   @Post('groupes/:id/membres')
   @ApiOperation({ summary: 'Ajouter un locataire au groupe' })
@@ -265,5 +284,62 @@ export class CotisationsController {
   ): Promise<TranchePaiementResponse[]> {
     const tranches = await this.getTranchesUseCase.execute(id);
     return tranches.map(TranchePaiementResponse.fromEntity);
+  }
+
+  // ── Espace membre ─────────────────────────────────────────────────────────────
+
+  @Get('mon-espace/groupes')
+  @ApiOperation({
+    summary: 'Mes groupes de cotisation',
+    description: 'Retourne tous les groupes auxquels le membre connecté appartient, avec sa contribution du mois courant.',
+  })
+  @ApiQuery({ name: 'periode', required: false, example: '06-2026', description: 'MM-YYYY (défaut: mois courant)' })
+  @ApiResponse({ status: 200, type: [MonGroupeResponse] })
+  async getMesGroupes(
+    @Req() req: Request,
+    @Query('periode') periode?: string,
+  ): Promise<MonGroupeResponse[]> {
+    const locataireId = (req.user as any).id;
+    const result = await this.getMesGroupesUseCase.execute(locataireId, periode);
+    return result.map(MonGroupeResponse.fromMonGroupe);
+  }
+
+  @Get('mon-espace/bilan')
+  @ApiOperation({
+    summary: 'Mon bilan de cotisations',
+    description: 'Retourne toutes les contributions du membre connecté (toutes périodes, tous groupes) avec les totaux.',
+  })
+  @ApiQuery({ name: 'periode', required: false, example: '06-2026', description: 'Filtrer par période MM-YYYY' })
+  @ApiResponse({ status: 200, type: MonBilanResponse })
+  async getMesBilan(
+    @Req() req: Request,
+    @Query('periode') periode?: string,
+  ): Promise<MonBilanResponse> {
+    const locataireId = (req.user as any).id;
+    const bilan = await this.getMesContributionsUseCase.execute(locataireId, periode);
+    return MonBilanResponse.fromBilan(bilan);
+  }
+
+  @Post('contributions/:id/payer-tout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Payer la totalité restante d\'une contribution',
+    description: 'Soldé la contribution en une seule fois. Équivalent à addTranche(montantRestant). Réservé au membre propriétaire de la contribution.',
+  })
+  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiResponse({ status: 200, type: AddTrancheResultResponse })
+  @ApiResponse({ status: 403, description: 'Contribution appartenant à un autre membre' })
+  @ApiResponse({ status: 422, description: 'Contribution déjà soldée ou rejetée' })
+  async payerTout(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ConfirmContributionDto,
+    @Req() req: Request,
+  ): Promise<AddTrancheResultResponse> {
+    const locataireId = (req.user as any).id;
+    const result = await this.payerToutUseCase.execute(id, locataireId, dto);
+    return {
+      tranche: TranchePaiementResponse.fromEntity(result.tranche),
+      contribution: ContributionResponse.fromEntity(result.contribution),
+    };
   }
 }

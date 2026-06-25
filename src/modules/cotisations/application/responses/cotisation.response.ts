@@ -5,6 +5,8 @@ import { CotisationMembreEntity } from '../../domain/entities/cotisation-membre.
 import { ContributionEntity } from '../../domain/entities/contribution.entity';
 import { TranchePaiementEntity } from '../../domain/entities/tranche-paiement.entity';
 import { GroupeSummary } from '../../domain/repositories/i-cotisation.repository';
+import type { MonBilan } from '../use-cases/get-mes-contributions.use-case';
+import type { MonGroupe } from '../use-cases/get-mes-groupes.use-case';
 
 // ── Groupe ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +42,8 @@ export class MembreResponse {
   @ApiProperty() id: string;
   @ApiProperty() groupeId: string;
   @ApiProperty() locataireId: string;
+  @ApiPropertyOptional({ nullable: true }) nom: string | null;
+  @ApiPropertyOptional({ nullable: true }) prenom: string | null;
   @ApiProperty() estTresorier: boolean;
   @ApiProperty() estActif: boolean;
   @ApiProperty() dateAdhesion: Date;
@@ -49,6 +53,8 @@ export class MembreResponse {
     r.id = e.id;
     r.groupeId = e.groupeId;
     r.locataireId = e.locataireId;
+    r.nom = e.nom;
+    r.prenom = e.prenom;
     r.estTresorier = e.estTresorier;
     r.estActif = e.estActif;
     r.dateAdhesion = e.dateAdhesion;
@@ -70,6 +76,8 @@ export class ContributionResponse {
   @ApiPropertyOptional({ nullable: true }) recuUrl: string | null;
   @ApiProperty() groupeId: string;
   @ApiProperty() membreId: string;
+  @ApiPropertyOptional({ nullable: true }) membreNom: string | null;
+  @ApiPropertyOptional({ nullable: true }) membrePrenom: string | null;
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;
 
@@ -86,6 +94,8 @@ export class ContributionResponse {
     r.recuUrl = e.recuUrl;
     r.groupeId = e.groupeId;
     r.membreId = e.membreId;
+    r.membreNom = e.membreNom;
+    r.membrePrenom = e.membrePrenom;
     r.createdAt = e.createdAt;
     r.updatedAt = e.updatedAt;
     return r;
@@ -141,6 +151,41 @@ export class GroupeSummaryResponse {
     r.nombreMembresPayes = s.nombreMembresPayes;
     r.nombreMembresEnAttente = s.nombreMembresEnAttente;
     r.contributions = s.contributions.map(ContributionResponse.fromEntity);
+    return r;
+  }
+}
+
+// ── Espace membre ─────────────────────────────────────────────────────────────
+
+export class MonGroupeResponse {
+  @ApiProperty({ type: GroupeResponse }) groupe: GroupeResponse;
+  @ApiProperty({ type: MembreResponse }) membre: MembreResponse;
+  @ApiPropertyOptional({ type: ContributionResponse, nullable: true })
+  contributionCourante: ContributionResponse | null;
+
+  static fromMonGroupe(mg: MonGroupe): MonGroupeResponse {
+    const r = new MonGroupeResponse();
+    r.groupe = GroupeResponse.fromEntity(mg.groupe);
+    r.membre = MembreResponse.fromEntity(mg.membre);
+    r.contributionCourante = mg.contributionCourante
+      ? ContributionResponse.fromEntity(mg.contributionCourante)
+      : null;
+    return r;
+  }
+}
+
+export class MonBilanResponse {
+  @ApiProperty() totalAttendu: number;
+  @ApiProperty() totalPaye: number;
+  @ApiProperty() totalRestant: number;
+  @ApiProperty({ type: [ContributionResponse] }) contributions: ContributionResponse[];
+
+  static fromBilan(b: MonBilan): MonBilanResponse {
+    const r = new MonBilanResponse();
+    r.totalAttendu = b.totalAttendu;
+    r.totalPaye = b.totalPaye;
+    r.totalRestant = b.totalRestant;
+    r.contributions = b.contributions.map(ContributionResponse.fromEntity);
     return r;
   }
 }
